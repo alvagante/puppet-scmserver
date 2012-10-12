@@ -1,0 +1,137 @@
+#!/bin/sh
+# File Managed by Puppet
+<% if operatingsystem == 'RedHat' or operatingsystem == 'CentOS' or operatingsystem == 'Scientific' %>
+# scm-server        Startup script for SCM Server
+#
+# chkconfig: - 85 15
+# description: SCM Server is a tool manage Git Mercurial and Subversion repos over http
+<% elsif operatingsystem == 'Debian' or operatingsystem == 'Ubuntu' or operatingsystem == 'Mint' %>
+<% end %>
+### BEGIN INIT INFO
+# Provides:          scmserver
+# Required-Start:    $local_fs $remote_fs $network 
+# Required-Stop:     $local_fs $remote_fs $network 
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start/stop scm-server service
+### END INIT INFO
+
+# define where scmserver is - this is the directory containing directories log, bin, conf etc
+SCM_HOME=${SCM_HOME:-"<%= scope.lookupvar('scmserver::real_scmserver_dir') %>"}
+
+# define the user under which scmserver will run, or use 'RUNASIS' to run as the current user
+SCM_USER=${SCM_USER:-"<%= scope.lookupvar('scmserver::process_user') %>"}
+
+# make sure java is in your path
+JAVAPTH=${JAVAPTH:-"/usr/local/jdk/bin"}
+
+# Lock and Pid files
+LOCKFILE=/var/lock/scmserver
+PIDFILE=<%= scope.lookupvar('scmserver::real_pid_file') %>.pid
+
+if [ "$SCM_USER" = "RUNASIS" ]; then
+  SUBIT=""
+else
+  SUBIT="su - $SCM_USER -c "
+fi
+
+if [ -n "$SCM_CONSOLE" -a ! -d "$SCM_CONSOLE" ]; then
+  # ensure the file exists
+  touch $SCM_CONSOLE
+  if [ ! -z "$SUBIT" ]; then
+    chown $SCM_USER $SCM_CONSOLE
+  fi 
+fi
+
+if [ -n "$SCM_CONSOLE" -a ! -f "$SCM_CONSOLE" ]; then
+  echo "WARNING: location for saving console log invalid: $SCM_CONSOLE"
+  echo "WARNING: ignoring it and using /dev/null"
+  SCM_CONSOLE="/dev/null"
+fi
+
+#define what will be done with the console log
+SCM_CONSOLE=${SCM_CONSOLE:-"/dev/null"}
+
+# Start command
+SCM_CMD_START="cd $SCM_HOME/bin; ./scm-server"
+
+# Stop command
+pslist=$( ps -ef | grep java | grep $SCM_USER | awk '{print $2}' | tr '\n' ' ' | sed -e s/\ $// )
+SCM_CMD_STOP="cd $SCM_HOME/bin; kill -15 $pslist"
+
+if [ -z "`echo $PATH | grep $JAVAPTH`" ]; then
+  export PATH=$PATH:$JAVAPTH
+fi
+
+if [ ! -d "$SCM_HOME" ]; then
+  echo SCM_HOME does not exist as a valid directory : $SCM_HOME
+  exit 1
+fi
+
+
+status () {
+  pslist=$( ps -ef | grep java | grep $SCM_USER | awk '{print $2}' | tr '\n' ' ' | sed -e s/\ $// )
+  if [ -n "$pslist" ]; then
+    echo "scmserver (pid $pslist) is running result: 0"
+    return 0
+  fi
+  if [ -f $PIDFILE ]; then
+    echo "scmserver dead but pid file ( $PIDFILE ) exists result: 1"
+    return 1
+  fi
+  if [ -f $LOCKFILE ]; then
+    echo "scmserver dead but subsys ( $LOCKFILE ) locked result: 2"
+    return 2
+  fi
+  echo "scmserver is stopped result: 3"
+  return 3
+}
+
+start () {
+  if [ -f $LOCKFILE ]; then
+    status
+    exit
+  fi
+  cd $SCM_HOME/bin
+  echo SCM_CMD_START = $SCM_CMD_START
+  if [ -z "$SUBIT" ]; then
+    eval $SCM_CMD_START >${SCM_CONSOLE} 2>&1 &
+    if [ "$?" -eq 0 ]; then
+      touch $LOCKFILE
+    fi
+  else
+    $SUBIT "$SCM_CMD_START >${SCM_CONSOLE} 2>&1 &"
+    if [ "$?" -eq 0 ]; then
+      touch $LOCKFILE
+    fi
+  fi
+}
+
+stop () {
+  echo SCM_CMD_STOP = $SCM_CMD_STOP
+  if [ -z "$SUBIT" ]; then
+    $SCM_CMD_STOP && rm -f $LOCKFILE
+  else
+    $SUBIT "$SCM_CMD_STOP" && rm -f $LOCKFILE
+  fi
+}
+
+case "$1" in
+start)
+    start
+    ;;
+stop)
+    stop
+    ;;
+restart)
+    stop
+    sleep 15
+    start
+    ;;
+status)
+    status
+    ;;
+*)
+    echo "usage: $0 (start|stop|restart|status|help)"
+esac
+
