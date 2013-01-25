@@ -469,7 +469,7 @@ class scmserver (
       ensure  => directory,
       path    => $scmserver::real_config_dir,
       require => Class['scmserver::install'],
-      notify  => $foo::manage_service_autorestart,
+      notify  => $scmserver::manage_service_autorestart,
       source  => $source_dir,
       recurse => true,
       purge   => $source_dir_purge,
